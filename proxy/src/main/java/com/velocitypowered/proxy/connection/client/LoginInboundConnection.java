@@ -73,6 +73,9 @@ public class LoginInboundConnection implements LoginPhaseConnection {
   }
 
   @Override
+  public void disconnectQuietly(Component reason) {}
+
+  @Override
   public void sendLoginPluginMessage(ChannelIdentifier identifier, byte[] contents,
       MessageConsumer consumer) {
     if (identifier == null) {

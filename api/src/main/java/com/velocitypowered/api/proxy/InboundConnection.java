@@ -11,6 +11,7 @@ import com.velocitypowered.api.network.ProtocolVersion;
 
 import java.net.InetSocketAddress;
 import java.util.Optional;
+import net.kyori.adventure.text.Component;
 
 /**
  * Represents an incoming connection to the proxy.
@@ -44,4 +45,11 @@ public interface InboundConnection {
    * @return the protocol version the connection uses
    */
   ProtocolVersion getProtocolVersion();
+
+  /**
+   * Quietly disconnects the connection.
+   *
+   * @param reason Reason for disconnect
+   */
+  void disconnectQuietly(Component reason);
 }

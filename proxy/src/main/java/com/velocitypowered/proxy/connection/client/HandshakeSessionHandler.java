@@ -143,7 +143,7 @@ public class HandshakeSessionHandler implements MinecraftSessionHandler {
     }
 
     LoginInboundConnection lic = new LoginInboundConnection(ic);
-    server.getEventManager().fireAndForget(new ConnectionHandshakeEvent(lic));
+    server.getEventManager().fireAndForget(new ConnectionHandshakeEvent(ic));
     connection.setSessionHandler(new LoginSessionHandler(server, connection, lic));
   }
 
@@ -229,6 +229,9 @@ public class HandshakeSessionHandler implements MinecraftSessionHandler {
     public ProtocolVersion getProtocolVersion() {
       return ProtocolVersion.LEGACY;
     }
+
+    @Override
+    public void disconnectQuietly(Component reason) {}
 
     @Override
     public String toString() {
