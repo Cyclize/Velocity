@@ -358,9 +358,6 @@ public class ConnectedPlayer implements MinecraftConnectionAssociation, Player, 
     return connection.getProtocolVersion();
   }
 
-  @Override
-  public void disconnectQuietly(Component reason) {}
-
   /**
    * Translates the message in the user's locale.
    *

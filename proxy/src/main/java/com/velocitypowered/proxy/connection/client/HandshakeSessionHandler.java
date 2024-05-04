@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018-2023 Velocity Contributors
+ * Copyright (C) 2018-2024 Velocity Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -43,6 +43,7 @@ import io.netty.buffer.ByteBuf;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.Optional;
+import java.util.concurrent.ExecutionException;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import org.apache.logging.log4j.LogManager;
@@ -155,9 +156,23 @@ public class HandshakeSessionHandler implements MinecraftSessionHandler {
       return;
     }
 
+    try {
+      final ConnectionHandshakeEvent event = new ConnectionHandshakeEvent(ic, handshake.getIntent());
+      server.getEventManager().fire(event).get();
+      ConnectionHandshakeEvent.ConnectionHandshakeComponentResult result = event.getResult();
+      Optional<Component> disconnectReason = result.getReasonComponent();
+      if (disconnectReason.isPresent()) {
+        // Bump connection into correct protocol state so that we can send the disconnect packet.
+        connection.setState(StateRegistry.LOGIN);
+        // The component is guaranteed to be provided if the connection was denied.
+        ic.disconnectQuietly(disconnectReason.get());
+        return;
+      }
+    } catch (InterruptedException | ExecutionException e) {
+      // The event is fire and forget anyway
+    }
+
     final LoginInboundConnection lic = new LoginInboundConnection(ic);
-    server.getEventManager().fireAndForget(
-            new ConnectionHandshakeEvent(lic, handshake.getIntent()));
     connection.setActiveSessionHandler(StateRegistry.LOGIN,
         new InitialLoginSessionHandler(server, connection, lic));
   }
