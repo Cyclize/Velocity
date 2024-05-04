@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018 Velocity Contributors
+ * Copyright (C) 2018-2023 Velocity Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -26,10 +26,15 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.checkerframework.checker.nullness.qual.Nullable;
 
+/**
+ * Holds parsed command line options.
+ */
 public final class ProxyOptions {
+
   private static final Logger logger = LogManager.getLogger(ProxyOptions.class);
   private final boolean help;
   private final @Nullable Integer port;
+  private final @Nullable Boolean haproxy;
 
   ProxyOptions(final String[] args) {
     final OptionParser parser = new OptionParser();
@@ -37,12 +42,18 @@ public final class ProxyOptions {
     final OptionSpec<Void> help = parser.acceptsAll(Arrays.asList("h", "help"), "Print help")
         .forHelp();
     final OptionSpec<Integer> port = parser.acceptsAll(Arrays.asList("p", "port"),
-        "Specify the bind port to be used. The configuration bind port will be ignored.")
+            "Specify the bind port to be used. The configuration bind port will be ignored.")
         .withRequiredArg().ofType(Integer.class);
+    final OptionSpec<Boolean> haproxy = parser.acceptsAll(
+            Arrays.asList("haproxy", "haproxy-protocol"),
+            "Choose whether to enable haproxy protocol. "
+                    + "The configuration haproxy protocol will be ignored.")
+        .withRequiredArg().ofType(Boolean.class);
     final OptionSet set = parser.parse(args);
 
     this.help = set.has(help);
     this.port = port.value(set);
+    this.haproxy = haproxy.value(set);
 
     if (this.help) {
       try {
@@ -59,5 +70,9 @@ public final class ProxyOptions {
 
   public @Nullable Integer getPort() {
     return this.port;
+  }
+
+  public @Nullable Boolean isHaproxy() {
+    return this.haproxy;
   }
 }

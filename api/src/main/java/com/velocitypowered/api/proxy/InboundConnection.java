@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018 Velocity Contributors
+ * Copyright (C) 2018-2022 Velocity Contributors
  *
  * The Velocity API is licensed under the terms of the MIT License. For more details,
  * reference the LICENSE file in the api top-level directory.
@@ -7,11 +7,10 @@
 
 package com.velocitypowered.api.proxy;
 
+import com.velocitypowered.api.network.ProtocolState;
 import com.velocitypowered.api.network.ProtocolVersion;
-
 import java.net.InetSocketAddress;
 import java.util.Optional;
-import net.kyori.adventure.text.Component;
 
 /**
  * Represents an incoming connection to the proxy.
@@ -47,9 +46,9 @@ public interface InboundConnection {
   ProtocolVersion getProtocolVersion();
 
   /**
-   * Quietly disconnects the connection.
+   * Returns the current protocol state of this connection.
    *
-   * @param reason Reason for disconnect
+   * @return the protocol state of the connection
    */
-  void disconnectQuietly(Component reason);
+  ProtocolState getProtocolState();
 }

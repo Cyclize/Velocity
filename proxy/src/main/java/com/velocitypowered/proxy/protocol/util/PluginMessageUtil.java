@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018 Velocity Contributors
+ * Copyright (C) 2018-2023 Velocity Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -24,7 +24,7 @@ import com.google.common.collect.ImmutableList;
 import com.velocitypowered.api.network.ProtocolVersion;
 import com.velocitypowered.api.util.ProxyVersion;
 import com.velocitypowered.proxy.protocol.ProtocolUtils;
-import com.velocitypowered.proxy.protocol.packet.PluginMessage;
+import com.velocitypowered.proxy.protocol.packet.PluginMessagePacket;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import java.nio.charset.StandardCharsets;
@@ -33,6 +33,9 @@ import java.util.List;
 import java.util.Locale;
 import java.util.regex.Pattern;
 
+/**
+ * Utilities for handling plugin messages.
+ */
 public final class PluginMessageUtil {
 
   private static final String BRAND_CHANNEL_LEGACY = "MC|Brand";
@@ -48,10 +51,11 @@ public final class PluginMessageUtil {
 
   /**
    * Determines whether or not this is a brand plugin message. This is shown on the client.
+   *
    * @param message the plugin message
    * @return whether or not this is a brand plugin message
    */
-  public static boolean isMcBrand(PluginMessage message) {
+  public static boolean isMcBrand(PluginMessagePacket message) {
     checkNotNull(message, "message");
     return message.getChannel().equals(BRAND_CHANNEL_LEGACY) || message.getChannel()
         .equals(BRAND_CHANNEL);
@@ -59,10 +63,11 @@ public final class PluginMessageUtil {
 
   /**
    * Determines whether or not this plugin message is being used to register plugin channels.
+   *
    * @param message the plugin message
    * @return whether we are registering plugin channels or not
    */
-  public static boolean isRegister(PluginMessage message) {
+  public static boolean isRegister(PluginMessagePacket message) {
     checkNotNull(message, "message");
     return message.getChannel().equals(REGISTER_CHANNEL_LEGACY) || message.getChannel()
         .equals(REGISTER_CHANNEL);
@@ -70,10 +75,11 @@ public final class PluginMessageUtil {
 
   /**
    * Determines whether or not this plugin message is being used to unregister plugin channels.
+   *
    * @param message the plugin message
    * @return whether we are unregistering plugin channels or not
    */
-  public static boolean isUnregister(PluginMessage message) {
+  public static boolean isUnregister(PluginMessagePacket message) {
     checkNotNull(message, "message");
     return message.getChannel().equals(UNREGISTER_CHANNEL_LEGACY) || message.getChannel()
         .equals(UNREGISTER_CHANNEL);
@@ -81,13 +87,14 @@ public final class PluginMessageUtil {
 
   /**
    * Fetches all the channels in a register or unregister plugin message.
+   *
    * @param message the message to get the channels from
    * @return the channels, as an immutable list
    */
-  public static List<String> getChannels(PluginMessage message) {
+  public static List<String> getChannels(PluginMessagePacket message) {
     checkNotNull(message, "message");
     checkArgument(isRegister(message) || isUnregister(message), "Unknown channel type %s",
-            message.getChannel());
+        message.getChannel());
     if (!message.content().isReadable()) {
       // If we try to split this, we will get an one-element array with the empty string, which
       // has caused issues with 1.13+ compatibility. Just return an empty list.
@@ -99,29 +106,32 @@ public final class PluginMessageUtil {
 
   /**
    * Constructs a channel (un)register packet.
+   *
    * @param protocolVersion the client/server's protocol version
-   * @param channels the channels to register
+   * @param channels        the channels to register
    * @return the plugin message to send
    */
-  public static PluginMessage constructChannelsPacket(ProtocolVersion protocolVersion,
-                                                      Collection<String> channels) {
+  public static PluginMessagePacket constructChannelsPacket(ProtocolVersion protocolVersion,
+                                                            Collection<String> channels) {
     checkNotNull(channels, "channels");
     checkArgument(!channels.isEmpty(), "no channels specified");
-    String channelName = protocolVersion.compareTo(ProtocolVersion.MINECRAFT_1_13) >= 0
+    String channelName = protocolVersion.noLessThan(ProtocolVersion.MINECRAFT_1_13)
         ? REGISTER_CHANNEL : REGISTER_CHANNEL_LEGACY;
     ByteBuf contents = Unpooled.buffer();
     contents.writeCharSequence(String.join("\0", channels), StandardCharsets.UTF_8);
-    return new PluginMessage(channelName, contents);
+    return new PluginMessagePacket(channelName, contents);
   }
 
   /**
    * Rewrites the brand message to indicate the presence of Velocity.
+   *
    * @param message the plugin message
    * @param version the proxy version
    * @return the rewritten plugin message
    */
-  public static PluginMessage rewriteMinecraftBrand(PluginMessage message, ProxyVersion version,
-      ProtocolVersion protocolVersion) {
+  public static PluginMessagePacket rewriteMinecraftBrand(PluginMessagePacket message,
+                                                          ProxyVersion version,
+                                                          ProtocolVersion protocolVersion) {
     checkNotNull(message, "message");
     checkNotNull(version, "version");
     checkArgument(isMcBrand(message), "message is not a brand plugin message");
@@ -130,20 +140,21 @@ public final class PluginMessageUtil {
     String rewrittenBrand = String.format("%s (%s)", currentBrand, version.getName());
 
     ByteBuf rewrittenBuf = Unpooled.buffer();
-    if (protocolVersion.compareTo(ProtocolVersion.MINECRAFT_1_8) >= 0) {
+    if (protocolVersion.noLessThan(ProtocolVersion.MINECRAFT_1_8)) {
       ProtocolUtils.writeString(rewrittenBuf, rewrittenBrand);
     } else {
       rewrittenBuf.writeCharSequence(rewrittenBrand, StandardCharsets.UTF_8);
     }
 
-    return new PluginMessage(message.getChannel(), rewrittenBuf);
+    return new PluginMessagePacket(message.getChannel(), rewrittenBuf);
   }
 
   /**
-   * Some clients (mostly poorly-implemented bots) do not send validly-formed brand messages.
-   * In order to accommodate their broken behavior, we'll first try to read in the 1.8 format, and
-   * if that fails, treat it as a 1.7-format message (which has no prefixed length). (The message
+   * Some clients (mostly poorly-implemented bots) do not send validly-formed brand messages. In
+   * order to accommodate their broken behavior, we'll first try to read in the 1.8 format, and if
+   * that fails, treat it as a 1.7-format message (which has no prefixed length). (The message
    * Velocity sends will be in the correct format depending on the protocol.)
+   *
    * @param content the brand packet
    * @return the client brand
    */
@@ -158,7 +169,8 @@ public final class PluginMessageUtil {
   private static final Pattern INVALID_IDENTIFIER_REGEX = Pattern.compile("[^a-z0-9\\-_]*");
 
   /**
-   * Transform a plugin message channel from a "legacy" (<1.13) form to a modern one.
+   * Transform a plugin message channel from a "legacy" (less than 1.13) form to a modern one.
+   *
    * @param name the existing name
    * @return the new name
    */

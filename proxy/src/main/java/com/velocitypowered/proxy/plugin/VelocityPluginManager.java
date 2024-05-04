@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018 Velocity Contributors
+ * Copyright (C) 2018-2023 Velocity Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -53,6 +53,9 @@ import java.util.Set;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+/**
+ * Handles loading plugins and provides a registry for loaded plugins.
+ */
 public class VelocityPluginManager implements PluginManager {
 
   private static final Logger logger = LogManager.getLogger(VelocityPluginManager.class);
@@ -73,6 +76,7 @@ public class VelocityPluginManager implements PluginManager {
 
   /**
    * Loads all plugins from the specified {@code directory}.
+   *
    * @param directory the directory to load from
    * @throws IOException if we could not open the directory
    */
@@ -90,7 +94,7 @@ public class VelocityPluginManager implements PluginManager {
       for (Path path : stream) {
         try {
           found.add(loader.loadCandidate(path));
-        } catch (Exception e) {
+        } catch (Throwable e) {
           logger.error("Unable to load plugin {}", path, e);
         }
       }
@@ -122,7 +126,7 @@ public class VelocityPluginManager implements PluginManager {
         VelocityPluginContainer container = new VelocityPluginContainer(realPlugin);
         pluginContainers.put(container, loader.createModule(container));
         loadedPluginsById.add(realPlugin.getId());
-      } catch (Exception e) {
+      } catch (Throwable e) {
         logger.error("Can't create module for plugin {}", candidate.getId(), e);
       }
     }
@@ -137,8 +141,8 @@ public class VelocityPluginManager implements PluginManager {
         bind(CommandManager.class).toInstance(server.getCommandManager());
         for (PluginContainer container : pluginContainers.keySet()) {
           bind(PluginContainer.class)
-            .annotatedWith(Names.named(container.getDescription().getId()))
-            .toInstance(container);
+              .annotatedWith(Names.named(container.getDescription().getId()))
+              .toInstance(container);
         }
       }
     };
@@ -149,7 +153,7 @@ public class VelocityPluginManager implements PluginManager {
 
       try {
         loader.createPlugin(container, plugin.getValue(), commonModule);
-      } catch (Exception e) {
+      } catch (Throwable e) {
         logger.error("Can't create plugin {}", description.getId(), e);
         continue;
       }

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018 Velocity Contributors
+ * Copyright (C) 2018-2023 Velocity Contributors
  *
  * The Velocity API is licensed under the terms of the MIT License. For more details,
  * reference the LICENSE file in the api top-level directory.
@@ -7,6 +7,7 @@
 
 package com.velocitypowered.api.permission;
 
+import java.util.Optional;
 import net.kyori.adventure.util.TriState;
 import org.checkerframework.checker.nullness.qual.Nullable;
 
@@ -43,7 +44,7 @@ public enum Tristate {
    *
    * @param val the boolean value
    * @return {@link #TRUE} or {@link #FALSE}, if the value is <code>true</code> or
-   * <code>false</code>, respectively.
+   *     <code>false</code>, respectively.
    */
   public static Tristate fromBoolean(boolean val) {
     return val ? TRUE : FALSE;
@@ -57,7 +58,7 @@ public enum Tristate {
    *
    * @param val the boolean value
    * @return {@link #UNDEFINED}, {@link #TRUE} or {@link #FALSE}, if the value is <code>null</code>,
-   * <code>true</code> or <code>false</code>, respectively.
+   *     <code>true</code> or <code>false</code>, respectively.
    */
   public static Tristate fromNullableBoolean(@Nullable Boolean val) {
     if (val == null) {
@@ -65,6 +66,21 @@ public enum Tristate {
     }
     return val ? TRUE : FALSE;
   }
+
+  /**
+   * Returns a {@link Tristate} from an {@link Optional}.
+   *
+   * <p>Unlike {@link #fromBoolean(boolean)}, this method returns {@link #UNDEFINED}
+   * if the value is empty.</p>
+   *
+   * @param val the optional boolean value
+   * @return {@link #UNDEFINED}, {@link #TRUE} or {@link #FALSE}, if the value is empty,
+   *     <code>true</code> or <code>false</code>, respectively.
+   */
+  public static Tristate fromOptionalBoolean(Optional<Boolean> val) {
+    return val.map(Tristate::fromBoolean).orElse(UNDEFINED);
+  }
+
 
   private final boolean booleanValue;
 

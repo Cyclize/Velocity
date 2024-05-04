@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018 Velocity Contributors
+ * Copyright (C) 2021-2022 Velocity Contributors
  *
  * The Velocity API is licensed under the terms of the MIT License. For more details,
  * reference the LICENSE file in the api top-level directory.
@@ -7,6 +7,7 @@
 
 package com.velocitypowered.api.event.annotation;
 
+import java.lang.annotation.Documented;
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Target;
 
@@ -17,6 +18,7 @@ import java.lang.annotation.Target;
  * operations in a non-blocking matter.
  */
 @Target(ElementType.TYPE)
+@Documented
 public @interface AwaitingEvent {
 
 }

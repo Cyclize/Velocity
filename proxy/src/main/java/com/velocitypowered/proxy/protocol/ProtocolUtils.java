@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018 Velocity Contributors
+ * Copyright (C) 2018-2023 Velocity Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,7 +21,9 @@ import static com.google.common.base.Preconditions.checkArgument;
 import static com.velocitypowered.proxy.protocol.util.NettyPreconditions.checkFrame;
 
 import com.velocitypowered.api.network.ProtocolVersion;
+import com.velocitypowered.api.proxy.crypto.IdentifiedKey;
 import com.velocitypowered.api.util.GameProfile;
+import com.velocitypowered.proxy.crypto.IdentifiedKeyImpl;
 import com.velocitypowered.proxy.protocol.netty.MinecraftDecoder;
 import com.velocitypowered.proxy.protocol.util.VelocityLegacyHoverEventSerializer;
 import com.velocitypowered.proxy.util.except.QuietDecoderException;
@@ -32,19 +34,24 @@ import io.netty.buffer.ByteBufUtil;
 import io.netty.handler.codec.CorruptedFrameException;
 import io.netty.handler.codec.DecoderException;
 import io.netty.handler.codec.EncoderException;
-
-import java.io.DataInput;
-import java.io.DataOutput;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
-
+import net.kyori.adventure.key.Key;
+import net.kyori.adventure.nbt.BinaryTag;
 import net.kyori.adventure.nbt.BinaryTagIO;
+import net.kyori.adventure.nbt.BinaryTagType;
+import net.kyori.adventure.nbt.BinaryTagTypes;
 import net.kyori.adventure.nbt.CompoundBinaryTag;
 import net.kyori.adventure.text.serializer.gson.GsonComponentSerializer;
+import net.kyori.adventure.text.serializer.json.JSONOptions;
+import net.kyori.option.OptionState;
 
+/**
+ * Utilities for writing and reading data in the Minecraft protocol.
+ */
 public enum ProtocolUtils {
   ;
 
@@ -53,13 +60,55 @@ public enum ProtocolUtils {
           .downsampleColors()
           .emitLegacyHoverEvent()
           .legacyHoverEventSerializer(VelocityLegacyHoverEventSerializer.INSTANCE)
+          .options(
+              OptionState.optionState()
+              // before 1.16
+              .value(JSONOptions.EMIT_RGB, Boolean.FALSE)
+              .value(JSONOptions.EMIT_HOVER_EVENT_TYPE, JSONOptions.HoverEventValueMode.LEGACY_ONLY)
+              // before 1.20.3
+              .value(JSONOptions.EMIT_COMPACT_TEXT_COMPONENT, Boolean.FALSE)
+              .value(JSONOptions.EMIT_HOVER_SHOW_ENTITY_ID_AS_INT_ARRAY, Boolean.FALSE)
+              .value(JSONOptions.VALIDATE_STRICT_EVENTS, Boolean.FALSE)
+              .build()
+          )
+          .build();
+  private static final GsonComponentSerializer PRE_1_20_3_SERIALIZER =
+          GsonComponentSerializer.builder()
+          .legacyHoverEventSerializer(VelocityLegacyHoverEventSerializer.INSTANCE)
+          .options(
+              OptionState.optionState()
+              // after 1.16
+              .value(JSONOptions.EMIT_RGB, Boolean.TRUE)
+              .value(JSONOptions.EMIT_HOVER_EVENT_TYPE, JSONOptions.HoverEventValueMode.MODERN_ONLY)
+              // before 1.20.3
+              .value(JSONOptions.EMIT_COMPACT_TEXT_COMPONENT, Boolean.FALSE)
+              .value(JSONOptions.EMIT_HOVER_SHOW_ENTITY_ID_AS_INT_ARRAY, Boolean.FALSE)
+              .value(JSONOptions.VALIDATE_STRICT_EVENTS, Boolean.FALSE)
+              .build()
+          )
           .build();
   private static final GsonComponentSerializer MODERN_SERIALIZER =
       GsonComponentSerializer.builder()
           .legacyHoverEventSerializer(VelocityLegacyHoverEventSerializer.INSTANCE)
+          .options(
+              OptionState.optionState()
+              // after 1.16
+              .value(JSONOptions.EMIT_RGB, Boolean.TRUE)
+              .value(JSONOptions.EMIT_HOVER_EVENT_TYPE, JSONOptions.HoverEventValueMode.MODERN_ONLY)
+              // after 1.20.3
+              .value(JSONOptions.EMIT_COMPACT_TEXT_COMPONENT, Boolean.TRUE)
+              .value(JSONOptions.EMIT_HOVER_SHOW_ENTITY_ID_AS_INT_ARRAY, Boolean.TRUE)
+              .value(JSONOptions.VALIDATE_STRICT_EVENTS, Boolean.TRUE)
+              .build()
+          )
           .build();
 
-  private static final int DEFAULT_MAX_STRING_SIZE = 65536; // 64KiB
+  public static final int DEFAULT_MAX_STRING_SIZE = 65536; // 64KiB
+  private static final BinaryTagType<? extends BinaryTag>[] BINARY_TAG_TYPES = new BinaryTagType[] {
+      BinaryTagTypes.END, BinaryTagTypes.BYTE, BinaryTagTypes.SHORT, BinaryTagTypes.INT,
+      BinaryTagTypes.LONG, BinaryTagTypes.FLOAT, BinaryTagTypes.DOUBLE,
+      BinaryTagTypes.BYTE_ARRAY, BinaryTagTypes.STRING, BinaryTagTypes.LIST,
+      BinaryTagTypes.COMPOUND, BinaryTagTypes.INT_ARRAY, BinaryTagTypes.LONG_ARRAY};
   private static final QuietDecoderException BAD_VARINT_CACHED =
       new QuietDecoderException("Bad VarInt decoded");
   private static final int[] VARINT_EXACT_BYTE_LENGTHS = new int[33];
@@ -73,6 +122,7 @@ public enum ProtocolUtils {
 
   /**
    * Reads a Minecraft-style VarInt from the specified {@code buf}.
+   *
    * @param buf the buffer to read from
    * @return the decoded VarInt
    */
@@ -89,6 +139,7 @@ public enum ProtocolUtils {
    * Reads a Minecraft-style VarInt from the specified {@code buf}. The difference between this
    * method and {@link #readVarInt(ByteBuf)} is that this function returns a sentinel value if the
    * varint is invalid.
+   *
    * @param buf the buffer to read from
    * @return the decoded VarInt, or {@code Integer.MIN_VALUE} if the varint is invalid
    */
@@ -107,6 +158,7 @@ public enum ProtocolUtils {
 
   /**
    * Returns the exact byte size of {@code value} if it were encoded as a VarInt.
+   *
    * @param value the value to encode
    * @return the byte size of {@code value} if encoded as a VarInt
    */
@@ -116,7 +168,8 @@ public enum ProtocolUtils {
 
   /**
    * Writes a Minecraft-style VarInt to the specified {@code buf}.
-   * @param buf the buffer to read from
+   *
+   * @param buf   the buffer to read from
    * @param value the integer to write
    */
   public static void writeVarInt(ByteBuf buf, int value) {
@@ -157,7 +210,8 @@ public enum ProtocolUtils {
   /**
    * Writes the specified {@code value} as a 21-bit Minecraft VarInt to the specified {@code buf}.
    * The upper 11 bits will be discarded.
-   * @param buf the buffer to read from
+   *
+   * @param buf   the buffer to read from
    * @param value the integer to write
    */
   public static void write21BitVarInt(ByteBuf buf, int value) {
@@ -173,6 +227,7 @@ public enum ProtocolUtils {
   /**
    * Reads a VarInt length-prefixed UTF-8 string from the {@code buf}, making sure to not go over
    * {@code cap} size.
+   *
    * @param buf the buffer to read from
    * @param cap the maximum size of the string, in UTF-8 character length
    * @return the decoded string
@@ -185,21 +240,21 @@ public enum ProtocolUtils {
   private static String readString(ByteBuf buf, int cap, int length) {
     checkFrame(length >= 0, "Got a negative-length string (%s)", length);
     // `cap` is interpreted as a UTF-8 character length. To cover the full Unicode plane, we must
-    // consider the length of a UTF-8 character, which can be up to 4 bytes. We do an initial
+    // consider the length of a UTF-8 character, which can be up to 3 bytes. We do an initial
     // sanity check and then check again to make sure our optimistic guess was good.
-    checkFrame(length <= cap * 4, "Bad string size (got %s, maximum is %s)", length, cap);
+    checkFrame(length <= cap * 3, "Bad string size (got %s, maximum is %s)", length, cap);
     checkFrame(buf.isReadable(length),
         "Trying to read a string that is too long (wanted %s, only have %s)", length,
         buf.readableBytes());
     String str = buf.toString(buf.readerIndex(), length, StandardCharsets.UTF_8);
     buf.skipBytes(length);
-    checkFrame(str.length() <= cap, "Got a too-long string (got %s, max %s)",
-        str.length(), cap);
+    checkFrame(str.length() <= cap, "Got a too-long string (got %s, max %s)", str.length(), cap);
     return str;
   }
 
   /**
    * Writes the specified {@code str} to the {@code buf} with a VarInt prefix.
+   *
    * @param buf the buffer to write to
    * @param str the string to write
    */
@@ -209,6 +264,59 @@ public enum ProtocolUtils {
     buf.writeCharSequence(str, StandardCharsets.UTF_8);
   }
 
+  /**
+   * Reads a standard Mojang Text namespaced:key from the buffer.
+   *
+   * @param buf the buffer to read from
+   * @return the decoded key
+   */
+  public static Key readKey(ByteBuf buf) {
+    return Key.key(readString(buf), Key.DEFAULT_SEPARATOR);
+  }
+
+  /**
+   * Writes a standard Mojang Text namespaced:key to the buffer.
+   *
+   * @param buf the buffer to write to
+   * @param key the key to write
+   */
+  public static void writeKey(ByteBuf buf, Key key) {
+    writeString(buf, key.asString());
+  }
+
+  /**
+   * Reads a standard Mojang Text namespaced:key array from the buffer.
+   *
+   * @param buf the buffer to read from
+   * @return the decoded key array
+   */
+  public static Key[] readKeyArray(ByteBuf buf) {
+    int length = readVarInt(buf);
+    checkFrame(length >= 0, "Got a negative-length array (%s)", length);
+    checkFrame(buf.isReadable(length),
+        "Trying to read an array that is too long (wanted %s, only have %s)", length,
+        buf.readableBytes());
+    Key[] ret = new Key[length];
+
+    for (int i = 0; i < ret.length; i++) {
+      ret[i] = ProtocolUtils.readKey(buf);
+    }
+    return ret;
+  }
+
+  /**
+   * Writes a standard Mojang Text namespaced:key array to the buffer.
+   *
+   * @param buf  the buffer to write to
+   * @param keys the keys to write
+   */
+  public static void writeKeyArray(ByteBuf buf, Key[] keys) {
+    writeVarInt(buf, keys.length);
+    for (Key key : keys) {
+      writeKey(buf, key);
+    }
+  }
+
   public static byte[] readByteArray(ByteBuf buf) {
     return readByteArray(buf, DEFAULT_MAX_STRING_SIZE);
   }
@@ -216,6 +324,7 @@ public enum ProtocolUtils {
   /**
    * Reads a VarInt length-prefixed byte array from the {@code buf}, making sure to not go over
    * {@code cap} size.
+   *
    * @param buf the buffer to read from
    * @param cap the maximum size of the string, in UTF-8 character length
    * @return the byte array
@@ -239,6 +348,7 @@ public enum ProtocolUtils {
 
   /**
    * Reads an VarInt-prefixed array of VarInt integers from the {@code buf}.
+   *
    * @param buf the buffer to read from
    * @return an array of integers
    */
@@ -254,6 +364,7 @@ public enum ProtocolUtils {
 
   /**
    * Reads an UUID from the {@code buf}.
+   *
    * @param buf the buffer to read from
    * @return the UUID from the buffer
    */
@@ -270,6 +381,7 @@ public enum ProtocolUtils {
 
   /**
    * Reads an UUID stored as an Integer Array from the {@code buf}.
+   *
    * @param buf the buffer to read from
    * @return the UUID from the buffer
    */
@@ -285,7 +397,8 @@ public enum ProtocolUtils {
 
   /**
    * Writes an UUID as an Integer Array to the {@code buf}.
-   * @param buf the buffer to write to
+   *
+   * @param buf  the buffer to write to
    * @param uuid the UUID to write
    */
   public static void writeUuidIntArray(ByteBuf buf, UUID uuid) {
@@ -297,34 +410,65 @@ public enum ProtocolUtils {
 
   /**
    * Reads a {@link net.kyori.adventure.nbt.CompoundBinaryTag} from the {@code buf}.
-   * @param buf the buffer to read from
-   * @param reader the NBT reader to use
+   *
+   * @param buf    the buffer to read from
+   * @param reader the {@link BinaryTagIO.Reader} to use
    * @return {@link net.kyori.adventure.nbt.CompoundBinaryTag} the CompoundTag from the buffer
    */
-  public static CompoundBinaryTag readCompoundTag(ByteBuf buf, BinaryTagIO.Reader reader) {
-    try {
-      return reader.read((DataInput) new ByteBufInputStream(buf));
-    } catch (IOException thrown) {
+  public static CompoundBinaryTag readCompoundTag(ByteBuf buf, ProtocolVersion version,
+                                                  BinaryTagIO.Reader reader) {
+    BinaryTag binaryTag = readBinaryTag(buf, version, reader);
+    if (binaryTag.type() != BinaryTagTypes.COMPOUND) {
       throw new DecoderException(
-              "Unable to parse NBT CompoundTag, full error: " + thrown.getMessage());
+          "Expected root tag to be CompoundTag, but is " + binaryTag.getClass().getSimpleName());
+    }
+    return (CompoundBinaryTag) binaryTag;
+  }
+
+  /**
+   * Reads a {@link net.kyori.adventure.nbt.BinaryTag} from the {@code buf}.
+   *
+   * @param buf    the buffer to read from
+   * @param reader the {@link BinaryTagIO.Reader} to use
+   * @return {@link net.kyori.adventure.nbt.BinaryTag} the BinaryTag from the buffer
+   */
+  public static BinaryTag readBinaryTag(ByteBuf buf, ProtocolVersion version,
+                                        BinaryTagIO.Reader reader) {
+    BinaryTagType<?> type = BINARY_TAG_TYPES[buf.readByte()];
+    if (version.lessThan(ProtocolVersion.MINECRAFT_1_20_2)) {
+      buf.skipBytes(buf.readUnsignedShort());
+    }
+    try {
+      return type.read(new ByteBufInputStream(buf));
+    } catch (IOException thrown) {
+      throw new DecoderException("Unable to parse BinaryTag, full error: " + thrown.getMessage());
     }
   }
 
   /**
-   * Writes a CompoundTag to the {@code buf}.
+   * Writes a {@link net.kyori.adventure.nbt.BinaryTag} to the {@code buf}.
+   *
    * @param buf the buffer to write to
-   * @param compoundTag the CompoundTag to write
+   * @param tag the BinaryTag to write
    */
-  public static void writeCompoundTag(ByteBuf buf, CompoundBinaryTag compoundTag) {
+  public static <T extends BinaryTag> void writeBinaryTag(ByteBuf buf, ProtocolVersion version,
+                                                          T tag) {
+    BinaryTagType<T> type = (BinaryTagType<T>) tag.type();
+    buf.writeByte(type.id());
     try {
-      BinaryTagIO.writer().write(compoundTag, (DataOutput) new ByteBufOutputStream(buf));
+      if (version.lessThan(ProtocolVersion.MINECRAFT_1_20_2)) {
+        // Empty name
+        buf.writeShort(0);
+      }
+      type.write(tag, new ByteBufOutputStream(buf));
     } catch (IOException e) {
-      throw new EncoderException("Unable to encode NBT CompoundTag");
+      throw new EncoderException("Unable to encode BinaryTag");
     }
   }
 
   /**
    * Reads a String array from the {@code buf}.
+   *
    * @param buf the buffer to read from
    * @return the String array from the buffer
    */
@@ -339,7 +483,8 @@ public enum ProtocolUtils {
 
   /**
    * Writes a String Array to the {@code buf}.
-   * @param buf the buffer to write to
+   *
+   * @param buf         the buffer to write to
    * @param stringArray the array to write
    */
   public static void writeStringArray(ByteBuf buf, String[] stringArray) {
@@ -350,8 +495,41 @@ public enum ProtocolUtils {
   }
 
   /**
+   * Reads an Integer array from the {@code buf}.
+   *
+   * @param buf the buffer to read from
+   * @return the Integer array from the buffer
+   */
+  public static int[] readVarIntArray(ByteBuf buf) {
+    int length = readVarInt(buf);
+    checkFrame(length >= 0, "Got a negative-length array (%s)", length);
+    checkFrame(buf.isReadable(length),
+        "Trying to read an array that is too long (wanted %s, only have %s)", length,
+        buf.readableBytes());
+    int[] ret = new int[length];
+    for (int i = 0; i < length; i++) {
+      ret[i] = readVarInt(buf);
+    }
+    return ret;
+  }
+
+  /**
+   * Writes an Integer Array to the {@code buf}.
+   *
+   * @param buf      the buffer to write to
+   * @param intArray the array to write
+   */
+  public static void writeVarIntArray(ByteBuf buf, int[] intArray) {
+    writeVarInt(buf, intArray.length);
+    for (int i = 0; i < intArray.length; i++) {
+      writeVarInt(buf, intArray[i]);
+    }
+  }
+
+  /**
    * Writes a list of {@link com.velocitypowered.api.util.GameProfile.Property} to the buffer.
-   * @param buf the buffer to write to
+   *
+   * @param buf        the buffer to write to
    * @param properties the properties to serialize
    */
   public static void writeProperties(ByteBuf buf, List<GameProfile.Property> properties) {
@@ -371,6 +549,7 @@ public enum ProtocolUtils {
 
   /**
    * Reads a list of {@link com.velocitypowered.api.util.GameProfile.Property} from the buffer.
+   *
    * @param buf the buffer to read from
    * @return the read properties
    */
@@ -433,8 +612,8 @@ public enum ProtocolUtils {
   /**
    * Writes an byte array for legacy version 1.7 to the specified {@code buf}
    *
-   * @param b array
-   * @param buf buf
+   * @param b             array
+   * @param buf           buf
    * @param allowExtended forge
    */
   public static void writeByteArray17(byte[] b, ByteBuf buf, boolean allowExtended) {
@@ -457,8 +636,8 @@ public enum ProtocolUtils {
   /**
    * Writes an {@link ByteBuf} for legacy version 1.7 to the specified {@code buf}
    *
-   * @param b array
-   * @param buf buf
+   * @param b             array
+   * @param buf           buf
    * @param allowExtended forge
    */
   public static void writeByteBuf17(ByteBuf b, ByteBuf buf, boolean allowExtended) {
@@ -497,7 +676,7 @@ public enum ProtocolUtils {
   /**
    * Writes a Minecraft-style extended short to the specified {@code buf}.
    *
-   * @param buf buf to write
+   * @param buf     buf to write
    * @param toWrite the extended short to write
    */
   public static void writeExtendedForgeShort(ByteBuf buf, int toWrite) {
@@ -524,27 +703,54 @@ public enum ProtocolUtils {
   }
 
   /**
-   * Returns the appropriate {@link GsonComponentSerializer} for the given protocol version. This
-   * is used to constrain messages sent to older clients.
+   * Returns the appropriate {@link GsonComponentSerializer} for the given protocol version. This is
+   * used to constrain messages sent to older clients.
    *
    * @param version the protocol version used by the client.
    * @return the appropriate {@link GsonComponentSerializer}
    */
   public static GsonComponentSerializer getJsonChatSerializer(ProtocolVersion version) {
-    if (version.compareTo(ProtocolVersion.MINECRAFT_1_16) >= 0) {
+    if (version.noLessThan(ProtocolVersion.MINECRAFT_1_20_3)) {
       return MODERN_SERIALIZER;
+    }
+    if (version.noLessThan(ProtocolVersion.MINECRAFT_1_16)) {
+      return PRE_1_20_3_SERIALIZER;
     }
     return PRE_1_16_SERIALIZER;
   }
 
+  /**
+   * Writes a players {@link IdentifiedKey} to the buffer.
+   *
+   * @param buf       the buffer
+   * @param playerKey the key to write
+   */
+  public static void writePlayerKey(ByteBuf buf, IdentifiedKey playerKey) {
+    buf.writeLong(playerKey.getExpiryTemporal().toEpochMilli());
+    ProtocolUtils.writeByteArray(buf, playerKey.getSignedPublicKey().getEncoded());
+    ProtocolUtils.writeByteArray(buf, playerKey.getSignature());
+  }
+
+  /**
+   * Reads a players {@link IdentifiedKey} from the buffer.
+   *
+   * @param buf the buffer
+   * @return the key
+   */
+  public static IdentifiedKey readPlayerKey(ProtocolVersion version, ByteBuf buf) {
+    long expiry = buf.readLong();
+    byte[] key = ProtocolUtils.readByteArray(buf);
+    byte[] signature = ProtocolUtils.readByteArray(buf, 4096);
+    IdentifiedKey.Revision revision = version.noGreaterOrLessThan(ProtocolVersion.MINECRAFT_1_19)
+        ? IdentifiedKey.Revision.GENERIC_V1 : IdentifiedKey.Revision.LINKED_V2;
+    return new IdentifiedKeyImpl(revision, key, expiry, signature);
+  }
+
+  /**
+   * Represents the direction in which a packet flows.
+   */
   public enum Direction {
     SERVERBOUND,
-    CLIENTBOUND;
-
-    public StateRegistry.PacketRegistry.ProtocolRegistry getProtocolRegistry(StateRegistry state,
-        ProtocolVersion version) {
-      return (this == SERVERBOUND ? state.serverbound : state.clientbound)
-          .getProtocolRegistry(version);
-    }
+    CLIENTBOUND
   }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018 Velocity Contributors
+ * Copyright (C) 2018-2023 Velocity Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,20 +19,24 @@ package com.velocitypowered.proxy.connection.client;
 
 import com.velocitypowered.api.proxy.player.PlayerSettings;
 import com.velocitypowered.api.proxy.player.SkinParts;
-import com.velocitypowered.proxy.protocol.packet.ClientSettings;
+import com.velocitypowered.proxy.protocol.packet.ClientSettingsPacket;
 import java.util.Locale;
+import java.util.Objects;
 import org.checkerframework.checker.nullness.qual.Nullable;
 
+/**
+ * Wraps the settings received in the Client Settings packet.
+ */
 public class ClientSettingsWrapper implements PlayerSettings {
 
   static final PlayerSettings DEFAULT = new ClientSettingsWrapper(
-      new ClientSettings("en_US", (byte) 10, 0, true, (short) 127, 1, true, false));
+      new ClientSettingsPacket("en_US", (byte) 10, 0, true, (short) 127, 1, true, false));
 
-  private final ClientSettings settings;
+  private final ClientSettingsPacket settings;
   private final SkinParts parts;
   private @Nullable Locale locale;
 
-  ClientSettingsWrapper(ClientSettings settings) {
+  ClientSettingsWrapper(ClientSettingsPacket settings) {
     this.settings = settings;
     this.parts = new SkinParts((byte) settings.getSkinParts());
   }
@@ -79,4 +83,21 @@ public class ClientSettingsWrapper implements PlayerSettings {
     return settings.isClientListingAllowed();
   }
 
+  @Override
+  public boolean equals(@Nullable final Object o) {
+    if (this == o) {
+      return true;
+    }
+    if (o == null || getClass() != o.getClass()) {
+      return false;
+    }
+    ClientSettingsWrapper that = (ClientSettingsWrapper) o;
+    return Objects.equals(settings, that.settings) && Objects.equals(parts, that.parts)
+        && Objects.equals(locale, that.locale);
+  }
+
+  @Override
+  public int hashCode() {
+    return Objects.hash(settings, parts, locale);
+  }
 }

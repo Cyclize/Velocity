@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018 Velocity Contributors
+ * Copyright (C) 2018-2022 Velocity Contributors
  *
  * The Velocity API is licensed under the terms of the MIT License. For more details,
  * reference the LICENSE file in the api top-level directory.
@@ -23,7 +23,6 @@ import java.util.Collection;
 import java.util.Optional;
 import java.util.UUID;
 import net.kyori.adventure.audience.Audience;
-import org.checkerframework.checker.nullness.qual.NonNull;
 
 /**
  * Provides an interface to a Minecraft server proxy.
@@ -41,6 +40,12 @@ public interface ProxyServer extends Audience {
    * Shuts down the proxy, kicking players with the default reason.
    */
   void shutdown();
+
+  /**
+   * Closes all listening endpoints for this server.
+   * This includes the main minecraft listener and query channel.
+   */
+  void closeListeners();
 
   /**
    * Retrieves the player currently connected to this proxy by their Minecraft username. The search

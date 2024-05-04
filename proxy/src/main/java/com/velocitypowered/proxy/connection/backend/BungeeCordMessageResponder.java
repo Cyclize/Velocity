@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018 Velocity Contributors
+ * Copyright (C) 2019-2023 Velocity Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,14 +19,16 @@ package com.velocitypowered.proxy.connection.backend;
 
 import com.velocitypowered.api.network.ProtocolVersion;
 import com.velocitypowered.api.proxy.Player;
+import com.velocitypowered.api.proxy.ServerConnection;
 import com.velocitypowered.api.proxy.messages.LegacyChannelIdentifier;
 import com.velocitypowered.api.proxy.messages.MinecraftChannelIdentifier;
 import com.velocitypowered.api.proxy.server.RegisteredServer;
+import com.velocitypowered.api.proxy.server.ServerInfo;
 import com.velocitypowered.api.util.UuidUtils;
 import com.velocitypowered.proxy.VelocityServer;
 import com.velocitypowered.proxy.connection.MinecraftConnection;
 import com.velocitypowered.proxy.connection.client.ConnectedPlayer;
-import com.velocitypowered.proxy.protocol.packet.PluginMessage;
+import com.velocitypowered.proxy.protocol.packet.PluginMessagePacket;
 import com.velocitypowered.proxy.protocol.util.ByteBufDataInput;
 import com.velocitypowered.proxy.protocol.util.ByteBufDataOutput;
 import com.velocitypowered.proxy.server.VelocityRegisteredServer;
@@ -41,9 +43,16 @@ import net.kyori.adventure.text.serializer.ComponentSerializer;
 import net.kyori.adventure.text.serializer.gson.GsonComponentSerializer;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 
-@SuppressFBWarnings(value = "OS_OPEN_STREAM", justification = "Most methods in this class open "
-    + "instances of ByteBufDataOutput backed by heap-allocated ByteBufs. Closing them does "
-    + "nothing.")
+/**
+ * Handles messages coming from servers trying to communicate with the BungeeCord plugin
+ * messaging channel interface.
+ */
+@SuppressFBWarnings(
+    value = "OS_OPEN_STREAM",
+    justification = "Most methods in this class open "
+      + "instances of ByteBufDataOutput backed by heap-allocated ByteBufs. Closing them does "
+      + "nothing."
+)
 public class BungeeCordMessageResponder {
 
   private static final MinecraftChannelIdentifier MODERN_CHANNEL = MinecraftChannelIdentifier
@@ -59,7 +68,7 @@ public class BungeeCordMessageResponder {
     this.player = player;
   }
 
-  public static boolean isBungeeCordMessage(PluginMessage message) {
+  public static boolean isBungeeCordMessage(PluginMessagePacket message) {
     return MODERN_CHANNEL.getId().equals(message.getChannel()) || LEGACY_CHANNEL.getId()
         .equals(message.getChannel());
   }
@@ -264,11 +273,15 @@ public class BungeeCordMessageResponder {
   private void processForwardToServer(ByteBufDataInput in) {
     String target = in.readUTF();
     ByteBuf toForward = in.unwrap().copy();
-    if (target.equals("ALL")) {
+    final ServerInfo currentUserServer = player.getCurrentServer()
+        .map(ServerConnection::getServerInfo).orElse(null);
+    if (target.equals("ALL") || target.equals("ONLINE")) {
       try {
         for (RegisteredServer rs : proxy.getAllServers()) {
-          ((VelocityRegisteredServer) rs).sendPluginMessage(LEGACY_CHANNEL,
-              toForward.retainedSlice());
+          if (!rs.getServerInfo().equals(currentUserServer)) {
+            ((VelocityRegisteredServer) rs).sendPluginMessage(LEGACY_CHANNEL,
+                toForward.retainedSlice());
+          }
         }
       } finally {
         toForward.release();
@@ -284,7 +297,7 @@ public class BungeeCordMessageResponder {
   }
 
   static String getBungeeCordChannel(ProtocolVersion version) {
-    return version.compareTo(ProtocolVersion.MINECRAFT_1_13) >= 0 ? MODERN_CHANNEL.getId()
+    return version.noLessThan(ProtocolVersion.MINECRAFT_1_13) ? MODERN_CHANNEL.getId()
         : LEGACY_CHANNEL.getId();
   }
 
@@ -297,11 +310,11 @@ public class BungeeCordMessageResponder {
   private static void sendServerResponse(ConnectedPlayer player, ByteBuf buf) {
     MinecraftConnection serverConnection = player.ensureAndGetCurrentServer().ensureConnected();
     String chan = getBungeeCordChannel(serverConnection.getProtocolVersion());
-    PluginMessage msg = new PluginMessage(chan, buf);
+    PluginMessagePacket msg = new PluginMessagePacket(chan, buf);
     serverConnection.write(msg);
   }
 
-  boolean process(PluginMessage message) {
+  boolean process(PluginMessagePacket message) {
     if (!proxy.getConfiguration().isBungeePluginChannelEnabled()) {
       return false;
     }
